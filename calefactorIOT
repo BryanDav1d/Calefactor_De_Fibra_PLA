@@ -9,6 +9,8 @@
 #define DHTPIN1 15          // Pin de datos del primer sensor DHT
 #define DHTPIN2 5           // Pin de datos del segundo sensor DHT
 #define DHTTYPE DHT22       // Tipo de sensor DHT utilizado
+#define pinCalefactor 12    // Pin de control del calefactor
+#define pinVentilador1 14   // Pin de control del primer ventilador
 //#define pinVentilador2 25   // Pin de control del segundo ventilador (cambiado)
 
 // Credenciales de la red WiFi y configuración del servidor MQTT
@@ -21,6 +23,8 @@ const char* topic_temp_interior = "TemperaturaInterior";  // Temperatura interio
 const char* topic_hum_interior = "HumedadInterior";      // Humedad interior
 const char* topic_temp_exterior = "TemperaturaExterior";  // Temperatura exterior
 const char* topic_hum_exterior = "HumedadExterior";      // Humedad exterior
+const char* topic_temp_deseada = "temperatura_deseada";  // Temperatura deseada
+const char* topic_ventilador = "ventilador";             // Control del ventilador
 
 DHT dht1(DHTPIN1, DHTTYPE); // Objeto para el primer sensor DHT
 DHT dht2(DHTPIN2, DHTTYPE); // Objeto para el segundo sensor DHT
@@ -69,6 +73,33 @@ void reconnect() {
   }
 }
 
+// Función de retorno de llamada para procesar mensajes MQTT entrantes
+void callback(char* topic, byte* payload, unsigned int length) {
+  if (strcmp(topic, topic_temp_deseada) == 0) {
+    // Si el mensaje recibido es sobre la temperatura deseada, actualizar la variable correspondiente
+    char str_payload[length + 1];
+    for (int i = 0; i < length; i++) {
+      str_payload[i] = (char)payload[i];
+    }
+    str_payload[length] = '\0';
+    temperatura_deseada = atof(str_payload); // Almacena el valor de la temperatura deseada como un flotante
+  } else if (strcmp(topic, topic_ventilador) == 0) {
+    // Si el mensaje recibido es sobre el control del ventilador
+    if (payload[0] == '1') {
+      // Si el valor del payload es '1', encender los ventiladores
+      ventiladoresActivos = true;
+      digitalWrite(pinVentilador1, HIGH); // Enciende el primer ventilador
+      //digitalWrite(pinVentilador2, HIGH); // Enciende el segundo ventilador
+      Serial.println("Ventiladores encendidos"); // Imprime un mensaje indicando que los ventiladores están encendidos
+    } else if (payload[0] == '0') {
+      // Si el valor del payload es '0', apagar los ventiladores
+      ventiladoresActivos = false;
+      digitalWrite(pinVentilador1, LOW); // Apaga el primer ventilador
+      //digitalWrite(pinVentilador2, LOW); // Apaga el segundo ventilador
+      Serial.println("Ventiladores apagados"); // Imprime un mensaje indicando que los ventiladores están apagados
+    }
+  }
+}
 
 // Configuración inicial del dispositivo
 void setup() {
@@ -78,7 +109,9 @@ void setup() {
   client.setCallback(callback); // Establece la función de retorno de llamada MQTT
   dht1.begin(); // Inicializa el primer sensor DHT
   dht2.begin(); // Inicializa el segundo sensor DHT
-
+  pinMode(pinCalefactor, OUTPUT); // Configura el pin del calefactor como salida
+  pinMode(pinVentilador1, OUTPUT); // Configura el pin del primer ventilador como salida
+  //pinMode(pinVentilador2, OUTPUT); // Configura el pin del segundo ventilador como salida
 }
 
 // Función principal de ejecución del bucle
@@ -131,6 +164,14 @@ void loop() {
   Serial.print(h2);
   Serial.println(" %");
 
- 
+  // Control del calefactor en función de la temperatura deseada y el margen definido
+  if (t1 < temperatura_deseada + margen) {
+    digitalWrite(pinCalefactor, LOW); // Apaga el calefactor
+    Serial.println("Calefactor encendido");
+  } else if (t1 > temperatura_deseada - margen) {
+    digitalWrite(pinCalefactor, HIGH); // Enciende el calefactor
+    Serial.println("Calefactor apagado");
+  }
+  
   delay(2000); // Espera 2 segundos antes de volver a ejecutar el bucle
 }
